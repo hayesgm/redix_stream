@@ -21,7 +21,7 @@ end
 
 ### Installing "unstable" Redis
 
-As of writing, redis streams are currently only available on the unstable (head) branch of redis. You can install from the official [downloads page](https://redis.io/download) [unstable.tar.gz](https://github.com/antirez/redis/archive/unstable.tar.gz), or install from source.
+As of writing, redis streams are currently only available on the unstable (head) branch of redis. You can install from the official [downloads page](https://redis.io/download) (or directly from the [unstable.tar.gz](https://github.com/antirez/redis/archive/unstable.tar.gz)), or install from source.
 
 If you are using Homebrew on macOS, you can simply run `run install redis --head`.
 
