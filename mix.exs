@@ -4,7 +4,7 @@ defmodule RedixStream.Mixfile do
   def project do
     [
       app: :redix_stream,
-      version: "0.1.0",
+      version: "0.1.1",
       description: "Redis Stream Processor in Elxir, built on redix",
       package: [
         maintainers: ["Geoffrey Hayes"],

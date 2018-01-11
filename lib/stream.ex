@@ -30,9 +30,11 @@ defmodule Redix.Stream do
       iex> Redix.Stream.consumer(:redix, "topic", fn msg -> msg end)
 
       iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]})
+
+      iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]}, tracker: "my_stream_tracker")
   """
-  @spec consumer(redix, t, function() | mfa()) :: Supervisor.Spec.spec
-  def consumer(redix, stream, callback) do
-    Supervisor.Spec.worker(Redix.Stream.Consumer, [redix, stream, callback])
+  @spec consumer(redix, t, function() | mfa(), keyword()) :: Supervisor.Spec.spec
+  def consumer(redix, stream, callback, opts \\ []) do
+    Supervisor.Spec.worker(Redix.Stream.Consumer, [redix, stream, callback, opts])
   end
 end

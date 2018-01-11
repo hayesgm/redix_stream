@@ -14,7 +14,7 @@ by adding `redix_stream` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:redix_stream, "~> 0.1.0"}
+    {:redix_stream, "~> 0.1.1"}
   ]
 end
 ```
@@ -68,6 +68,18 @@ def MyApp.Application do
 ```
 
 From there, you will be able to effectively stream messages.
+
+## Rank Tracker
+
+Until redis streams officially support consumer groups, we add an option that allows a given consumer to specify a rank (position) tracker per consumer. This tracks the last processed offset in a stream by a consumer, such that we can continue to consume a stream after the consumer restarts.
+
+** Trackers do not support sharding of stream items. Trackers are only used to track your position in the stream across restarts. Trackers do not guarantee exactly-once message processing. **
+
+```elixir
+Redix.Stream.Consumer.start_link(redix, "my_topic", {MyModule, :my_func, []}, tracker: "my_stream_tracker")
+```
+
+This consumer can be restarted and will safely pick up processing the next message. This is done by tracking the highest id of stream in a redis key `stream_tracker:<tracker name>`. ** If processing fails, messages will not be re-streamed. **
 
 ## Contributing
 
