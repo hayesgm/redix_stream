@@ -2,9 +2,14 @@ defmodule Redix.Stream.Consumer do
   @moduledoc """
   """
 
+  @type group_name :: String.t()
+  @type consumer_name :: String.t()
+
   @type state :: %{
           redix: Redix.Stream.redix(),
           stream: Redix.Stream.t(),
+          group_name: group_name(),
+          consumer_name: consumer_name(),
           handler: function() | mfa()
         }
 
@@ -14,7 +19,7 @@ defmodule Redix.Stream.Consumer do
   Starts a new GenServer of `Redix.Stream.Consumer`.
   """
   @spec start_link(Redix.Stream.redix(), Redix.Stream.t(), function() | mfa(), keyword()) ::
-          Supervisor.Spec.spec()
+          GenServer.on_start()
   def start_link(redix, stream, handler, opts \\ []) do
     GenServer.start_link(__MODULE__, {redix, stream, handler, opts})
   end
@@ -27,23 +32,46 @@ defmodule Redix.Stream.Consumer do
           {:ok, state}
   def init({redix, stream, handler, opts}) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
-    default_start_pos = Keyword.get(opts, :start_pos, "$")
-    tracker = Keyword.get(opts, :tracker, nil)
+    group_name = Keyword.get(opts, :group_name)
+    consumer_name = Keyword.get(opts, :consumer_name)
 
-    # If tracker specified, load our starting position
-    start_pos =
-      if tracker do
-        case Redix.command!(redix, ["GET", "stream_tracker:#{tracker}"]) do
-          nil -> default_start_pos
-          pos -> pos
-        end
-      else
-        default_start_pos
+    default_start_pos =
+      case group_name do
+        nil -> "$"
+        _ -> ">"
       end
+
+    start_pos = Keyword.get(opts, :start_pos, default_start_pos)
+
+    if consumer_name do
+      try do
+        start_pos =
+          case start_pos do
+            "$" -> "$"
+            ">" -> "$"
+            other -> other
+          end
+
+        Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos])
+      rescue
+        e in Redix.Error ->
+          case e.message do
+            "BUSYGROUP Consumer Group name already exists" -> nil
+            _ -> raise e
+          end
+      end
+    end
 
     stream_more_data(timeout, start_pos)
 
-    {:ok, %{redix: redix, stream: stream, tracker: tracker, handler: handler}}
+    {:ok,
+     %{
+       redix: redix,
+       stream: stream,
+       group_name: group_name,
+       consumer_name: consumer_name,
+       handler: handler
+     }}
   end
 
   @doc """
@@ -51,15 +79,41 @@ defmodule Redix.Stream.Consumer do
   """
   def handle_info(
         {:stream_more_data, timeout, start_pos},
-        %{redix: redix, stream: stream, handler: handler, tracker: tracker} = state
+        %{
+          redix: redix,
+          stream: stream,
+          group_name: group_name,
+          consumer_name: consumer_name,
+          handler: handler
+        } = state
       ) do
     # Wait for a number of messages to come in
     {:ok, stream_results} =
-      Redix.command(
-        redix,
-        ["XREAD", "BLOCK", timeout, "STREAMS", stream, start_pos],
-        timeout: :infinity
-      )
+      case {group_name, consumer_name} do
+        {nil, nil} ->
+          Redix.command(
+            redix,
+            ["XREAD", "BLOCK", timeout, "STREAMS", stream, start_pos],
+            timeout: :infinity
+          )
+
+        {group_name, consumer_name} ->
+          Redix.command(
+            redix,
+            [
+              "XREADGROUP",
+              "GROUP",
+              group_name,
+              consumer_name,
+              "BLOCK",
+              timeout,
+              "STREAMS",
+              stream,
+              start_pos
+            ],
+            timeout: :infinity
+          )
+      end
 
     # Process the results and get the next positions to consume from
     for stream_result <- stream_results do
@@ -73,11 +127,6 @@ defmodule Redix.Stream.Consumer do
       # Process the items
       for stream_item <- stream_items |> Enum.reverse() do
         call_handler(handler, stream, stream_item)
-      end
-
-      # If tracker specified, track our current position
-      if tracker do
-        Redix.command!(redix, ["SET", "stream_tracker:#{tracker}", next_pos])
       end
 
       # And stream more data...

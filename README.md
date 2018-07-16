@@ -2,9 +2,9 @@
 
 `Redix.Stream` is an extension to [redix](https://github.com/whatyouhide/redix) supporting Redis streams. This project allows you to stream and consume data from redis streams.
 
-[Redis streams](http://antirez.com/news/114) are similar to Kafka, nats.io and other "distributed commit log" software. The core idea is that the stream is an append-only log and any number of consumers can read from that stream, each keeping track of its position in that log. This allows for high-troughput processing of messages in the log. Streams can be used for analytics, queues, etc. based on how they are consumed.
+[Redis streams](https://redis.io/topics/streams-intro) are similar to Kafka, nats.io and other "distributed commit log" software. The core idea is that the stream is an append-only log and any number of consumers can read from that stream, each keeping track of its position in that log. This allows for high-troughput processing of messages in the log. Streams can be used for analytics, queues, etc. based on how they are consumed.
 
-** Note: redis streams are currently only available on the unstable (head) branch of redis. See `Installation` below for details. **
+** Note: redis streams are currently in the 5.0 release candidate. See `Installation` below for details. **
 
 ## Installation
 
@@ -21,7 +21,7 @@ end
 
 ### Installing "unstable" Redis
 
-As of writing, redis streams are currently only available on the unstable (head) branch of redis. You can install from the official [downloads page](https://redis.io/download) (or directly from the [unstable.tar.gz](https://github.com/antirez/redis/archive/unstable.tar.gz)), or install from source.
+As of writing, redis streams are currently available in the 5.0 release candidates. You can install from the official [downloads page](https://redis.io/download) (or directly from the [unstable.tar.gz](https://github.com/antirez/redis/archive/unstable.tar.gz)), use the 5.0-rc [docker image](https://hub.docker.com/_/redis/) or install from source.
 
 If you are using Homebrew on macOS, you can simply run `run install redis --head`.
 
@@ -69,27 +69,37 @@ def MyApp.Application do
 
 From there, you will be able to effectively stream messages.
 
-## Rank Tracker
+## Consumer Groups
 
-Until redis streams officially support consumer groups, we add an option that allows a given consumer to specify a rank (position) tracker per consumer. This tracks the last processed offset in a stream by a consumer, such that we can continue to consume a stream after the consumer restarts.
+Redis Streams have the concept of [consumer groups](https://redis.io/topics/streams-intro#consumer-groups). Consumer groups allow multiple consumers to work on the same stream, guaranteeing that messages are only processed by one consumer.
 
-** Trackers do not support sharding of stream items. Trackers are only used to track your position in the stream across restarts. Trackers do not guarantee exactly-once message processing. **
+Starting a Consumer as part of a group is similar to starting a normal stream. You need to provide the additional `group_name` and `consumer_name` options:
 
 ```elixir
-Redix.Stream.Consumer.start_link(redix, "my_topic", {MyModule, :my_func, []}, tracker: "my_stream_tracker")
-```
+def MyApp.Application do
+  use Application
 
-This consumer can be restarted and will safely pick up processing the next message. This is done by tracking the highest id of stream in a redis key `stream_tracker:<tracker name>`. ** If processing fails, messages will not be re-streamed. **
+  def start(_type, _args) do
+    # List all child processes to be supervised
+    children = [
+      worker(Redix, [[], [name: :redix]]),
+      Redix.Stream.consumer(:redix, "my_topic", {MyModule, :my_func, [group_name: "my_group", consumer_name: "consumer1"]})
+    ]
+
+    # See https://hexdocs.pm/elixir/Supervisor.html
+    # for other strategies and supported options
+    opts = [strategy: :one_for_one, name: Blocks.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
+```
 
 ## Contributing
 
 To contribute, please feel free to open an issue or pull request. Here are a few topics which we know need to be addressed:
 
- 1. Callbacks are run in the stream consumer process. If the callback fails, it will crash the consumer process. The callbacks also block all processing until each finishes.
-
- 2. Redis streams currently do not support consumer groups. This means they we cannot run several consumers and know that only one will process a given message. This could be acheived through other redis commands, however.
+1.  Callbacks are run in the stream consumer process. If the callback fails, it will crash the consumer process. The callbacks also block all processing until each finishes.
 
 ## Futher Reading
 
-* [Redis Streams](http://antirez.com/news/114)
-* [Redix.Streams ExDocs](https://hexdocs.pm/redix_stream)
+- [Redis Streams](http://antirez.com/news/114)
+- [Redix.Streams ExDocs](https://hexdocs.pm/redix_stream)
