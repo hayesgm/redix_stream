@@ -7,6 +7,7 @@ defmodule Redix.Stream.Consumer do
 
   @type state :: %{
           redix: Redix.Stream.redix(),
+          consumer_group_command_connection: Redix.Stream.redix(),
           stream: Redix.Stream.t(),
           group_name: group_name(),
           consumer_name: consumer_name(),
@@ -34,6 +35,7 @@ defmodule Redix.Stream.Consumer do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     group_name = Keyword.get(opts, :group_name)
     consumer_name = Keyword.get(opts, :consumer_name)
+    consumer_group_command_connection = Keyword.get(opts, :consumer_group_command_connection)
 
     default_start_pos =
       case group_name do
@@ -67,6 +69,7 @@ defmodule Redix.Stream.Consumer do
     {:ok,
      %{
        redix: redix,
+       consumer_group_command_connection: consumer_group_command_connection,
        stream: stream,
        group_name: group_name,
        consumer_name: consumer_name,
@@ -81,6 +84,7 @@ defmodule Redix.Stream.Consumer do
         {:stream_more_data, timeout, start_pos},
         %{
           redix: redix,
+          consumer_group_command_connection: consumer_group_command_connection,
           stream: stream,
           group_name: group_name,
           consumer_name: consumer_name,
@@ -125,9 +129,25 @@ defmodule Redix.Stream.Consumer do
         end)
 
       # Process the items
-      for stream_item <- stream_items |> Enum.reverse() do
-        call_handler(handler, stream, stream_item)
+      for stream_item = {id, _} <- stream_items |> Enum.reverse() do
+        case call_handler(handler, stream, stream_item) do
+          :ok ->
+            {:ok, _} =
+              Redix.command(
+                consumer_group_command_connection,
+                ~w(XACK #{stream} #{group_name} #{id})
+              )
+
+          _ ->
+            nil
+        end
       end
+
+      next_pos =
+        case start_pos do
+          ">" -> ">"
+          _ -> next_pos
+        end
 
       # And stream more data...
       stream_more_data(timeout, next_pos)
