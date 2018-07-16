@@ -10,13 +10,15 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_2} = Redix.start_link()
     pid = self()
 
-    {:ok, _pid} = Redix.Stream.Consumer.start_link(
-      redix_1,
-      @test_stream,
-      fn stream, {id, values} -> send(pid, {:streamed, stream, id, values}) end
-    )
+    {:ok, _pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_1,
+        @test_stream,
+        fn stream, {id, values} -> send(pid, {:streamed, stream, id, values}) end
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_1", "value_1")
 
@@ -29,13 +31,15 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_2} = Redix.start_link()
     pid = self()
 
-    {:ok, _pid} = Redix.Stream.Consumer.start_link(
-      redix_1,
-      @test_stream,
-      fn stream, {id, values} -> send(pid, {:streamed, stream, id, values}) end
-    )
+    {:ok, _pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_1,
+        @test_stream,
+        fn stream, {id, values} -> send(pid, {:streamed, stream, id, values}) end
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_1", "value_1")
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_2", "value_2")
@@ -53,18 +57,21 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_2} = Redix.start_link()
     pid = self()
 
-    {:ok, _pid} = Redix.Stream.Consumer.start_link(
-      redix_1,
-      @test_stream,
-      fn stream, {id, values} ->
-        :timer.sleep(100) # this runs in the consumer and blocks
-                          # further processing.
+    {:ok, _pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_1,
+        @test_stream,
+        fn stream, {id, values} ->
+          # this runs in the consumer and blocks
+          :timer.sleep(100)
+          # further processing.
 
-        send(pid, {:streamed, stream, id, values})
-      end
-    )
+          send(pid, {:streamed, stream, id, values})
+        end
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_1", "value_1")
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_2", "value_2")
@@ -82,15 +89,17 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_3} = Redix.start_link()
     pid = self()
 
-    {:ok, consumer_pid} = Redix.Stream.Consumer.start_link(
-      redix_1,
-      @test_stream,
-      fn stream, {id, values} ->
-        send(pid, {:streamed, stream, id, values})
-      end
-    )
+    {:ok, consumer_pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_1,
+        @test_stream,
+        fn stream, {id, values} ->
+          send(pid, {:streamed, stream, id, values})
+        end
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_1", "value_1")
 
@@ -99,15 +108,17 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_2", "value_2")
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_3", "value_3")
 
-    {:ok, _consumer_2_pid} = Redix.Stream.Consumer.start_link(
-      redix_3,
-      @test_stream,
-      fn stream, {id, values} ->
-        send(pid, {:streamed_2, stream, id, values})
-      end
-    )
+    {:ok, _consumer_2_pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_3,
+        @test_stream,
+        fn stream, {id, values} ->
+          send(pid, {:streamed_2, stream, id, values})
+        end
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_4", "value_4")
 
@@ -124,16 +135,18 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_3} = Redix.start_link()
     pid = self()
 
-    {:ok, consumer_pid} = Redix.Stream.Consumer.start_link(
-      redix_1,
-      @test_stream,
-      fn stream, {id, values} ->
-        send(pid, {:streamed, stream, id, values})
-      end,
-      tracker: "my_stream_tracker"
-    )
+    {:ok, consumer_pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_1,
+        @test_stream,
+        fn stream, {id, values} ->
+          send(pid, {:streamed, stream, id, values})
+        end,
+        tracker: "my_stream_tracker"
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_1", "value_1")
 
@@ -142,16 +155,18 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_2", "value_2")
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_3", "value_3")
 
-    {:ok, _consumer_2_pid} = Redix.Stream.Consumer.start_link(
-      redix_3,
-      @test_stream,
-      fn stream, {id, values} ->
-        send(pid, {:streamed_2, stream, id, values})
-      end,
-      tracker: "my_stream_tracker"
-    )
+    {:ok, _consumer_2_pid} =
+      Redix.Stream.Consumer.start_link(
+        redix_3,
+        @test_stream,
+        fn stream, {id, values} ->
+          send(pid, {:streamed_2, stream, id, values})
+        end,
+        tracker: "my_stream_tracker"
+      )
 
-    :timer.sleep(500) # allow consumer time to connect
+    # allow consumer time to connect
+    :timer.sleep(500)
 
     {:ok, _msg_id} = Redix.Stream.produce(redix_2, @test_stream, "key_4", "value_4")
 
