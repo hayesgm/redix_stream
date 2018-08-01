@@ -4,7 +4,7 @@ defmodule Redix.Stream do
   """
 
   @type redix :: pid() | atom()
-  @type t :: String.t
+  @type t :: String.t()
 
   @doc """
   Produces a new single message in a Redis stream.
@@ -13,7 +13,7 @@ defmodule Redix.Stream do
 
       iex> Redix.Stream.produce(:redix, "topic", "temperature", 55)
   """
-  @spec produce(redix, t, String.t, any()) :: {:ok, String.t} | {:error, any()}
+  @spec produce(redix, t, String.t(), any()) :: {:ok, String.t()} | {:error, any()}
   def produce(redix, stream, key, value) do
     case Redix.command(redix, ["XADD", stream, "*", key, value]) do
       {:ok, id} when is_binary(id) -> {:ok, id}
@@ -33,7 +33,7 @@ defmodule Redix.Stream do
 
       iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]}, tracker: "my_stream_tracker")
   """
-  @spec consumer(redix, t, function() | mfa(), keyword()) :: Supervisor.Spec.spec
+  @spec consumer(redix, t, function() | mfa(), keyword()) :: Supervisor.Spec.spec()
   def consumer(redix, stream, callback, opts \\ []) do
     Supervisor.Spec.worker(Redix.Stream.Consumer, [redix, stream, callback, opts])
   end
