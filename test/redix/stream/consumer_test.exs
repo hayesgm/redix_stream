@@ -158,7 +158,9 @@ defmodule Redix.Stream.ConsumerTest do
       )
 
     {:ok, msg_id1} = Redix.Stream.produce(cmd_connection, stream_name, "key_1", "value_1")
+    :timer.sleep(100)
     {:ok, msg_id2} = Redix.Stream.produce(cmd_connection, stream_name, "key_2", "value_2")
+    :timer.sleep(100)
     {:ok, msg_id3} = Redix.Stream.produce(cmd_connection, stream_name, "key_3", "value_3")
 
     assert_receive {consumer1, ^stream_name, ^msg_id1, ["key_1", "value_1"]}, 5_000
