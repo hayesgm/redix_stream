@@ -14,7 +14,7 @@ by adding `redix_stream` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:redix_stream, "~> 0.1.1"}
+    {:redix_stream, "~> 0.1.3"}
   ]
 end
 ```
@@ -101,5 +101,5 @@ To contribute, please feel free to open an issue or pull request. Here are a few
 
 ## Futher Reading
 
-- [Redis Streams](http://antirez.com/news/114)
+- [Redis Streams](https://redis.io/topics/streams-intro)
 - [Redix.Streams ExDocs](https://hexdocs.pm/redix_stream)
