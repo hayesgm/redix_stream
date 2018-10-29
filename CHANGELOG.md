@@ -1,3 +1,5 @@
+# 0.1.4
+ * Bump up dependencies to redix 0.8.2
 # 0.1.3
  * Bump up dependencies to Elixir 1.7 and redix 0.7.1
 # 0.1.2

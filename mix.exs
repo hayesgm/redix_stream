@@ -4,7 +4,7 @@ defmodule RedixStream.Mixfile do
   def project do
     [
       app: :redix_stream,
-      version: "0.1.3",
+      version: "0.1.4",
       description: "Redis Stream Processor in Elxir, built on redix",
       package: [
         maintainers: ["Geoffrey Hayes"],
@@ -27,7 +27,7 @@ defmodule RedixStream.Mixfile do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:redix, "~> 0.7.1"},
+      {:redix, "~> 0.8.2"},
       {:ex_doc, "~> 0.19", only: :dev, runtime: false},
       {:dialyxir, "~> 1.0.0-rc.3", only: [:dev], runtime: false}
     ]
