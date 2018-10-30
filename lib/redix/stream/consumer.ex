@@ -11,7 +11,7 @@ defmodule Redix.Stream.Consumer do
           stream: Redix.Stream.t(),
           group_name: group_name(),
           consumer_name: consumer_name(),
-          handler: function() | mfa()
+          handler: function() | Redix.Stream.handler()
         }
 
   @default_timeout 0
@@ -19,8 +19,12 @@ defmodule Redix.Stream.Consumer do
   @doc """
   Starts a new GenServer of `Redix.Stream.Consumer`.
   """
-  @spec start_link(Redix.Stream.redix(), Redix.Stream.t(), function() | mfa(), keyword()) ::
-          GenServer.on_start()
+  @spec start_link(
+          Redix.Stream.redix(),
+          Redix.Stream.t(),
+          function() | Redix.Stream.handler(),
+          keyword()
+        ) :: GenServer.on_start()
   def start_link(redix, stream, handler, opts \\ []) do
     GenServer.start_link(__MODULE__, {redix, stream, handler, opts})
   end
@@ -29,8 +33,9 @@ defmodule Redix.Stream.Consumer do
   Initializes a new `Redix.Stream.Consumer`, establishing a long-term
   stream with the given `redis` server.
   """
-  @spec init({Redix.Stream.redix(), Redix.Stream.t(), function() | mfa(), keyword}) ::
-          {:ok, state}
+  @spec init(
+          {Redix.Stream.redix(), Redix.Stream.t(), function() | Redix.Stream.handler(), keyword}
+        ) :: {:ok, state}
   def init({redix, stream, handler, opts}) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     group_name = Keyword.get(opts, :group_name)
@@ -175,7 +180,7 @@ defmodule Redix.Stream.Consumer do
     {:noreply, state}
   end
 
-  @spec call_handler(mfa(), Redix.Stream.t(), any()) :: any()
+  @spec call_handler(Redix.Stream.handler(), Redix.Stream.t(), any()) :: any()
   defp call_handler({module, function, args}, stream, msg) do
     apply(module, function, args ++ [stream, msg])
   end

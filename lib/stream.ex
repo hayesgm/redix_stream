@@ -5,6 +5,7 @@ defmodule Redix.Stream do
 
   @type redix :: pid() | atom()
   @type t :: String.t()
+  @type handler :: {module(), atom(), list(any())}
 
   @doc """
   Produces a new single message in a Redis stream.
