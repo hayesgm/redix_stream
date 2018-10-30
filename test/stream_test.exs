@@ -14,30 +14,22 @@ defmodule Redix.StreamTest do
     test "it should produce a spec with given a single stream and simple function" do
       spec = Redix.Stream.consumer(:redix, "topic", fn msg -> msg end)
 
-      assert {
-               Redix.Stream.Consumer,
-               {Redix.Stream.Consumer, :start_link, [:redix, "topic", _fn, []]},
-               :permanent,
-               5000,
-               :worker,
-               [Redix.Stream.Consumer]
+      assert %{
+               id: Redix.Stream.Consumer,
+               start: {Redix.Stream.Consumer, :start_link, [:redix, "topic", _fn, []]}
              } = spec
     end
 
     test "it should produce a spec with given multiple streams and an MFA" do
       spec = Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]})
 
-      assert {
-               Redix.Stream.Consumer,
-               {
+      assert %{
+               id: Redix.Stream.Consumer,
+               start: {
                  Redix.Stream.Consumer,
                  :start_link,
                  [:redix, "topic", {Module, :function, [:arg1, :arg2]}, []]
-               },
-               :permanent,
-               5000,
-               :worker,
-               [Redix.Stream.Consumer]
+               }
              } = spec
     end
 
@@ -50,9 +42,9 @@ defmodule Redix.StreamTest do
           group: "my_consumer_group"
         )
 
-      assert {
-               Redix.Stream.Consumer,
-               {
+      assert %{
+               id: Redix.Stream.Consumer,
+               start: {
                  Redix.Stream.Consumer,
                  :start_link,
                  [
@@ -61,11 +53,7 @@ defmodule Redix.StreamTest do
                    {Module, :function, [:arg1, :arg2]},
                    [group: "my_consumer_group"]
                  ]
-               },
-               :permanent,
-               5000,
-               :worker,
-               [Redix.Stream.Consumer]
+               }
              } = spec
     end
   end

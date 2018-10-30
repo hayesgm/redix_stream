@@ -33,8 +33,14 @@ defmodule Redix.Stream do
 
       iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]}, tracker: "my_stream_tracker")
   """
-  @spec consumer(redix, t, function() | mfa(), keyword()) :: Supervisor.Spec.spec()
+  @spec consumer(redix, t, function() | mfa(), keyword()) :: Supervisor.child_spec()
   def consumer(redix, stream, callback, opts \\ []) do
-    Supervisor.Spec.worker(Redix.Stream.Consumer, [redix, stream, callback, opts])
+    Supervisor.child_spec(
+      %{
+        id: Redix.Stream.Consumer,
+        start: {Redix.Stream.Consumer, :start_link, [redix, stream, callback, opts]}
+      },
+      []
+    )
   end
 end
