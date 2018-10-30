@@ -1,5 +1,5 @@
-# 0.1.6
- * Fix typespecs around mfa()
+# 0.1.6/7
+ * Fix typespecs around mfa() and handler()
 # 0.1.5
  * Remove deprecated `Supervisor.Spec` usage
 # 0.1.4
