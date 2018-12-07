@@ -4,8 +4,6 @@
 
 [Redis streams](https://redis.io/topics/streams-intro) are similar to Kafka, nats.io and other "distributed commit log" software. The core idea is that the stream is an append-only log and any number of consumers can read from that stream, each keeping track of its position in that log. This allows for high-troughput processing of messages in the log. Streams can be used for analytics, queues, etc. based on how they are consumed.
 
-** Note: redis streams are currently in the 5.0 release candidate. See `Installation` below for details. **
-
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
@@ -14,16 +12,12 @@ by adding `redix_stream` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:redix_stream, "~> 0.1.3"}
+    {:redix_stream, "~> 0.2.0"}
   ]
 end
 ```
 
-### Installing "unstable" Redis
-
-As of writing, redis streams are currently available in the 5.0 release candidates. You can install from the official [downloads page](https://redis.io/download) (or directly from the [unstable.tar.gz](https://github.com/antirez/redis/archive/unstable.tar.gz)), use the 5.0-rc [docker image](https://hub.docker.com/_/redis/) or install from source.
-
-If you are using Homebrew on macOS, you can simply run `run install redis --head`.
+Note: to use streams, you must be using redis 5.0 or greater.
 
 ## Usage
 
@@ -38,14 +32,24 @@ Redix can also be started in the supervision tree as a named process.
 Next, you should start a consumer to a stream specifying a callback function to run for each message:
 
 ```elixir
-Redix.Stream.Consumer.start_link(redix, "my_topic", fn stream, msg -> Logger.info("Got message #{inspect msg} from stream #{stream}") end)
+Redix.Stream.Consumer.start_link(redix, "my_topic", fn stream, id, values -> Logger.info("Got message #{inspect values} from stream #{stream}") end)
 ```
 
-The callback function can be in `{module, function, args}` format as well:
+The callback function can be in `{module, function, args}` format as well. When called, your handler will receive your args, followed by the stream name, the message id, and a map with the key-value pairs for the stream message.
 
 ```elixir
-Redix.Stream.Consumer.start_link(redix, "my_topic", {MyModule, :my_func, []})
+Redix.Stream.Consumer.start_link(redix, "my_topic", {MyModule, :my_func, [100]})
+
+# Elsewhere
+defmodule MyModule do
+  @spec my_func(integer(), String.t(), String.t(), %{String.t() => String.t()}) :: :ok | {:error, String.t()}
+  def my_func(my_arg, stream, id, values) do
+    :ok
+  end
+end
 ```
+
+Your handler must return `:ok`, otherwise the consumer will raise an error. For consumer groups, this will crash the consumer and means the message will need to be reprocessed by that consumer.
 
 Consumers can also be started as part of the Supervision tree:
 
@@ -57,7 +61,7 @@ def MyApp.Application do
     # List all child processes to be supervised
     children = [
       worker(Redix, [[], [name: :redix]]),
-      Redix.Stream.consumer(:redix, "my_topic", {MyModule, :my_func, []})
+      Redix.Stream.consumer_spec(:redix, "my_topic", {MyModule, :my_func, []})
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -83,7 +87,7 @@ def MyApp.Application do
     # List all child processes to be supervised
     children = [
       worker(Redix, [[], [name: :redix]]),
-      Redix.Stream.consumer(:redix, "my_topic", {MyModule, :my_func, [group_name: "my_group", consumer_name: "consumer1"]})
+      Redix.Stream.consumer_spec(:redix, "my_topic", {MyModule, :my_func, [group_name: "my_group", consumer_name: "consumer1"]})
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -92,6 +96,20 @@ def MyApp.Application do
     Supervisor.start_link(children, opts)
   end
 ```
+
+Each consumer in the consumer group will process messages in parallel with other consumers, but each group will only consume each message one time. You can have multiple consumer groups for a given stream.
+
+## Consumer Options
+
+The following options can be passed in to `consumer_spec` when defining a consumer:
+
+* `id` - The id to register the consumer process as (default: `Redix.Stream.Consumer`)
+* `timeout` - Timeout to wait for new messages in the stream before failing, 0 implies block forever (default: 0)
+* `group_name` - Consumer group for this consumer. We will create the group if it does not already exist (default: nil)
+* `consumer_name` - Unique name for this consumer. These names should be persistent per work since each consumer will claim messages that need to be processed. (default: nil)
+* `create_not_exists` - We will create the stream if it does not already exist (default: true)
+* `process_pending` - For a consumer in a consumer group, should we process pending messages (ones we claimed but did not successfully process) before processing new messages? (default: true)
+* `raise_errors` - If we fail to process a message because a handler returns an `{:error, error}` tuple, should we raise an error to fail the processor versus continue with an unacknowledged message? (default: true)
 
 ## Contributing
 

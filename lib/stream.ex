@@ -8,15 +8,26 @@ defmodule Redix.Stream do
   @type handler :: {module(), atom(), list(any())}
 
   @doc """
-  Produces a new single message in a Redis stream.
+  Produces a new single message into a Redis stream.
+
+  Note: if values are not strings, they will be converted to strings.
 
   ## Examples
 
-      iex> Redix.Stream.produce(:redix, "topic", "temperature", 55)
+      iex> {:ok, msg_id} = Redix.Stream.produce(:redix, "topic", %{"temperature" => 55})
+      iex> Enum.count(String.split(msg_id, "-"))
+      2
   """
-  @spec produce(redix, t, String.t(), any()) :: {:ok, String.t()} | {:error, any()}
-  def produce(redix, stream, key, value) do
-    case Redix.command(redix, ["XADD", stream, "*", key, value]) do
+  @spec produce(redix, t, %{String.t() => any()}) :: {:ok, String.t()} | {:error, any()}
+  def produce(redix, stream, key_values) do
+    redis_command =
+      key_values
+      |> Enum.reduce(["*", stream, "XADD"], fn {k, v}, acc ->
+        [to_string(v) | [k | acc]]
+      end)
+      |> Enum.reverse()
+
+    case Redix.command(redix, redis_command) do
       {:ok, id} when is_binary(id) -> {:ok, id}
       {:error, error} -> {:error, error}
     end
@@ -28,20 +39,17 @@ defmodule Redix.Stream do
 
   ## Examples
 
-      iex> Redix.Stream.consumer(:redix, "topic", fn msg -> msg end)
+      iex> Redix.Stream.consumer_spec(:redix, "topic", fn msg -> msg end)[:id]
+      Redix.Stream.Consumer
 
-      iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]})
+      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]})[:id]
+      Redix.Stream.Consumer
 
-      iex> Redix.Stream.consumer(:redix, "topic", {Module, :function, [:arg1, :arg2]}, tracker: "my_stream_tracker")
+      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]}, id: MyConsumer)[:id]
+      MyConsumer
   """
-  @spec consumer(redix, t, function() | handler(), keyword()) :: Supervisor.child_spec()
-  def consumer(redix, stream, callback, opts \\ []) do
-    Supervisor.child_spec(
-      %{
-        id: Redix.Stream.Consumer,
-        start: {Redix.Stream.Consumer, :start_link, [redix, stream, callback, opts]}
-      },
-      []
-    )
+  @spec consumer_spec(redix, t, function() | handler(), keyword()) :: Supervisor.child_spec()
+  def consumer_spec(redix, stream, callback, opts \\ []) do
+    Redix.Stream.Consumer.child_spec({redix, stream, callback, opts})
   end
 end
