@@ -99,17 +99,23 @@ def MyApp.Application do
 
 Each consumer in the consumer group will process messages in parallel with other consumers, but each group will only consume each message one time. You can have multiple consumer groups for a given stream.
 
-## Consumer Options
+## Consumer Spec Options
 
-The following options can be passed in to `consumer_spec` when defining a consumer:
+Each consumer will have a single supervisor to monitor that consumer. This allows the supervisor to restart the consumer for temporary issues.
 
+The following options can be passed in to `consumer_spec` when defining a consumer and supervisor:
+
+* `sup_id` - The id to register the supervisor process as (default: `Redix.Stream.ConsumerSup`)
+* `sup_restart` - The restart-type for the supervisor (`:transient`, `:temporary` or `:permanent`) (default: `:permanent`)
+* `sup_name` - The name to register the supervisor as (default: same as sup_id)
+* `sup_timeout` - The shutdown strategy (or timeout) for the supervisor.
 * `id` - The id to register the consumer process as (default: `Redix.Stream.Consumer`)
-* `timeout` - Timeout to wait for new messages in the stream before failing, 0 implies block forever (default: 0)
-* `group_name` - Consumer group for this consumer. We will create the group if it does not already exist (default: nil)
-* `consumer_name` - Unique name for this consumer. These names should be persistent per work since each consumer will claim messages that need to be processed. (default: nil)
-* `create_not_exists` - We will create the stream if it does not already exist (default: true)
-* `process_pending` - For a consumer in a consumer group, should we process pending messages (ones we claimed but did not successfully process) before processing new messages? (default: true)
-* `raise_errors` - If we fail to process a message because a handler returns an `{:error, error}` tuple, should we raise an error to fail the processor versus continue with an unacknowledged message? (default: true)
+* `timeout` - Timeout to wait for new messages in the stream before failing, 0 implies block forever (default: `0`)
+* `group_name` - Consumer group for this consumer. We will create the group if it does not already exist (default: `nil`)
+* `consumer_name` - Unique name for this consumer. These names should be persistent per work since each consumer will claim messages that need to be processed. (default: `nil`)
+* `create_not_exists` - We will create the stream if it does not already exist (default: `true`)
+* `process_pending` - For a consumer in a consumer group, should we process pending messages (ones we claimed but did not successfully process) before processing new messages? (default: `true`)
+* `raise_errors` - If we fail to process a message because a handler returns an `{:error, error}` tuple, should we raise an error to fail the processor versus continue with an unacknowledged message? (default: `true`)
 
 ## Contributing
 
