@@ -1,14 +1,14 @@
 defmodule Redix.Stream.Consumer do
   @moduledoc """
-  ABC
+  A Server which handle a single connection to a redix stream.
   """
+  require Logger
 
   @type group_name :: String.t()
   @type consumer_name :: String.t()
 
   @type state :: %{
           redix: Redix.Stream.redix(),
-          consumer_group_command_connection: Redix.Stream.redix(),
           stream: Redix.Stream.t(),
           group_name: group_name(),
           consumer_name: consumer_name(),
@@ -17,7 +17,7 @@ defmodule Redix.Stream.Consumer do
           raise_errors: boolean()
         }
 
-  @default_timeout 0
+  @default_timeout 2_000
 
   @doc """
   Returns child specification when used with a supervisor.
@@ -26,11 +26,15 @@ defmodule Redix.Stream.Consumer do
           {Redix.Stream.redix(), Redix.Stream.t(), function() | Redix.Stream.handler(), keyword()}
         ) :: Supervisor.child_spec()
   def child_spec({redix, stream, handler, opts}) do
-    {id, opts_without_id} = Keyword.pop(opts, :id, __MODULE__)
+    {id, opts_2} = Keyword.pop(opts, :id, __MODULE__)
+    {restart, opts_3} = Keyword.pop(opts_2, :restart, :permanent)
 
     %{
       id: id,
-      start: {__MODULE__, :start_link, [redix, stream, handler, opts_without_id]}
+      start: {__MODULE__, :start_link, [redix, stream, handler, opts_3]},
+      type: :worker,
+      restart: restart,
+      shutdown: :infinity
     }
   end
 
@@ -55,10 +59,11 @@ defmodule Redix.Stream.Consumer do
           {Redix.Stream.redix(), Redix.Stream.t(), function() | Redix.Stream.handler(), keyword}
         ) :: {:ok, state}
   def init({redix, stream, handler, opts}) do
+    Process.flag(:trap_exit, true)
+
     timeout = Keyword.get(opts, :timeout, @default_timeout)
     group_name = Keyword.get(opts, :group_name)
     consumer_name = Keyword.get(opts, :consumer_name)
-    consumer_group_command_connection = Keyword.get(opts, :consumer_group_command_connection)
     create_not_exists = Keyword.get(opts, :create_not_exists, true)
     process_pending = Keyword.get(opts, :process_pending, true)
     raise_errors = Keyword.get(opts, :raise_errors, true)
@@ -82,36 +87,14 @@ defmodule Redix.Stream.Consumer do
         {_, false, other} -> other
       end
 
-    if consumer_name do
-      case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos]) do
-        {:error, error = %Redix.Error{message: "ERR no such key"}} ->
-          if create_not_exists do
-            {:ok, _} = Redix.command(redix, ["XADD", stream, "*", "", ""])
-
-            # Recurse without create_not_exists flag set
-            init({redix, stream, handler, Keyword.put(opts, :create_not_exists, false)})
-          else
-            raise error
-          end
-
-        {:error, %Redix.Error{message: "BUSYGROUP Consumer Group name already exists"}} ->
-          # This is fine, just means the group already exists
-          :ok
-
-        {:error, error} ->
-          raise error
-
-        {:ok, _} ->
-          :ok
-      end
-    end
+    if consumer_name,
+      do: :ok = ensure_stream_and_group(redix, stream, group_name, start_pos, create_not_exists)
 
     stream_more_data(timeout, start_pos)
 
     {:ok,
      %{
        redix: redix,
-       consumer_group_command_connection: consumer_group_command_connection,
        stream: stream,
        group_name: group_name,
        consumer_name: consumer_name,
@@ -119,6 +102,10 @@ defmodule Redix.Stream.Consumer do
        process_pending: process_pending,
        raise_errors: raise_errors
      }}
+  end
+
+  def terminate(_reason, _state) do
+    :ok
   end
 
   @doc """
@@ -129,17 +116,13 @@ defmodule Redix.Stream.Consumer do
         {:stream_more_data, timeout, start_pos},
         %{
           redix: redix,
-          consumer_group_command_connection: consumer_group_command_connection,
           stream: stream,
           group_name: group_name,
           consumer_name: consumer_name,
-          handler: handler,
-          process_pending: process_pending,
-          raise_errors: raise_errors
+          process_pending: process_pending
         } = state
       )
-      when not is_nil(group_name) and not is_nil(consumer_name) and
-             not is_nil(consumer_group_command_connection) do
+      when not is_nil(group_name) and not is_nil(consumer_name) do
     # Wait for a number of messages to come in
     {:ok, stream_results} =
       Redix.command(
@@ -166,42 +149,93 @@ defmodule Redix.Stream.Consumer do
       {:noreply, %{state | process_pending: false}}
     else
       # Process the results and get the next positions to consume from
-      for [^stream, items] <- stream_results do
-        {stream_items, next_pos} = stream_items_to_tuples(items, start_pos)
+      if stream_results do
+        for [^stream, items] <- stream_results do
+          {stream_items, next_pos} = stream_items_to_tuples(items, start_pos)
 
-        # Process the items
-        for {id, map} <- Enum.reverse(stream_items) do
-          case call_handler(handler, stream, id, map) do
-            :ok ->
-              # TODO: Should we allow asynchronous ack?
+          next_pos =
+            case start_pos do
+              ">" -> ">"
+              _ -> next_pos
+            end
 
-              {:ok, _} =
-                Redix.command(consumer_group_command_connection, [
-                  "XACK",
-                  stream,
-                  group_name,
-                  id
-                ])
-
-            {:error, error} ->
-              if raise_errors do
-                raise "#{__MODULE__} Error processing #{id}: #{error}\n\nvalues:\n#{inspect(map)}"
-              end
-          end
+          # Process the items async
+          process_data(stream, Enum.reverse(stream_items), timeout, next_pos)
         end
-
-        next_pos =
-          case start_pos do
-            ">" -> ">"
-            _ -> next_pos
-          end
-
-        # And stream more data...
-        stream_more_data(timeout, next_pos)
+      else
+        # Otherwise, keep streaming
+        stream_more_data(timeout, start_pos)
       end
 
       {:noreply, state}
     end
+  end
+
+  # With a consumer group
+  def handle_info(
+        {:process_data, stream, [{id, values} | rest_stream_items], timeout, next_pos},
+        state = %{
+          handler: handler,
+          redix: redix,
+          group_name: group_name,
+          raise_errors: raise_errors
+        }
+      ) do
+    case call_handler(handler, stream, id, values) do
+      :ok ->
+        # TODO: Should we allow asynchronous ack?
+
+        {:ok, _} =
+          Redix.command(redix, [
+            "XACK",
+            stream,
+            group_name,
+            id
+          ])
+
+      {:error, error} ->
+        if raise_errors do
+          raise "#{__MODULE__} Error processing #{id}: #{error}\n\nvalues:\n#{inspect(values)}"
+        end
+    end
+
+    # And stream more data...
+    process_data(stream, rest_stream_items, timeout, next_pos)
+
+    {:noreply, state}
+  end
+
+  # Without a consumer group
+  def handle_info(
+        {:process_data, stream, [{id, values} | rest_stream_items], timeout, next_pos},
+        state = %{
+          handler: handler,
+          raise_errors: raise_errors
+        }
+      ) do
+    case call_handler(handler, stream, id, values) do
+      :ok ->
+        :ok
+
+      {:error, error} ->
+        if raise_errors do
+          raise "#{__MODULE__} Error processing #{id}: #{error}\n\nvalues:\n#{inspect(values)}"
+        end
+    end
+
+    # And stream more data...
+    process_data(stream, rest_stream_items, timeout, next_pos)
+
+    {:noreply, state}
+  end
+
+  def handle_info(
+        {:process_data, _stream, [], timeout, next_pos},
+        state
+      ) do
+    stream_more_data(timeout, next_pos)
+
+    {:noreply, state}
   end
 
   # Without a consumer group
@@ -209,8 +243,7 @@ defmodule Redix.Stream.Consumer do
         {:stream_more_data, timeout, start_pos},
         %{
           redix: redix,
-          stream: stream,
-          handler: handler
+          stream: stream
         } = state
       ) do
     # Wait for a number of messages to come in
@@ -222,16 +255,16 @@ defmodule Redix.Stream.Consumer do
       )
 
     # Process the results and get the next positions to consume from
-    for [^stream, items] <- stream_results do
-      {stream_items, next_pos} = stream_items_to_tuples(items, start_pos)
+    if stream_results do
+      for [^stream, items] <- stream_results do
+        {stream_items, next_pos} = stream_items_to_tuples(items, start_pos)
 
-      # Process the items
-      for {id, map} <- Enum.reverse(stream_items) do
-        call_handler(handler, stream, id, map)
+        # Process the items async
+        process_data(stream, Enum.reverse(stream_items), timeout, next_pos)
       end
-
-      # And stream more data...
-      stream_more_data(timeout, next_pos)
+    else
+      # Otherwise, keep streaming
+      stream_more_data(timeout, start_pos)
     end
 
     {:noreply, state}
@@ -273,5 +306,40 @@ defmodule Redix.Stream.Consumer do
     Process.send_after(self(), {:stream_more_data, timeout, next_pos}, 0)
 
     :ok
+  end
+
+  @spec process_data(
+          String.t(),
+          list({String.t(), %{String.t() => String.t()}}),
+          integer(),
+          String.t()
+        ) :: :ok
+  defp process_data(stream, values, timeout, next_pos) do
+    Process.send_after(self(), {:process_data, stream, values, timeout, next_pos}, 0)
+  end
+
+  @spec ensure_stream_and_group(pid(), String.t(), String.t(), String.t(), boolean()) :: :ok
+  defp ensure_stream_and_group(redix, stream, group_name, start_pos, create_not_exists) do
+    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos]) do
+      {:error, error = %Redix.Error{message: "ERR no such key"}} ->
+        if create_not_exists do
+          {:ok, _} = Redix.command(redix, ["XADD", stream, "*", "", ""])
+
+          # Recurse without create_not_exists flag set
+          ensure_stream_and_group(redix, stream, group_name, start_pos, true)
+        else
+          raise error
+        end
+
+      {:error, %Redix.Error{message: "BUSYGROUP Consumer Group name already exists"}} ->
+        # This is fine, just means the group already exists
+        :ok
+
+      {:error, error} ->
+        raise error
+
+      {:ok, _} ->
+        :ok
+    end
   end
 end

@@ -1,3 +1,6 @@
+# 0.2.0
+ * Add a supervisor for each consumer
+ * Handle shutdown of a consumer gracefully
 # 0.1.6/7
  * Fix typespecs around mfa() and handler()
 # 0.1.5

@@ -1,7 +1,10 @@
 defmodule Redix.Stream do
   @moduledoc """
-  Documentation for Redix.Stream.
+  `Redix.Stream` exposes an API for producing to redis streams, as well
+  consuming from those streams (via a process called a `Consumer`).
   """
+
+  alias Redix.Stream.ConsumerSup
 
   @type redix :: pid() | atom()
   @type t :: String.t()
@@ -10,7 +13,8 @@ defmodule Redix.Stream do
   @doc """
   Produces a new single message into a Redis stream.
 
-  Note: if values are not strings, they will be converted to strings.
+  Note: For values which are not strings, each of those values will be
+        converted into a string via `to_string/1`.
 
   ## Examples
 
@@ -40,16 +44,16 @@ defmodule Redix.Stream do
   ## Examples
 
       iex> Redix.Stream.consumer_spec(:redix, "topic", fn msg -> msg end)[:id]
-      Redix.Stream.Consumer
+      Redix.Stream.ConsumerSup
 
-      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]})[:id]
-      Redix.Stream.Consumer
-
-      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]}, id: MyConsumer)[:id]
+      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]}, sup_id: MyConsumer)[:id]
       MyConsumer
+
+      iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]}, sup_restart: :transient)[:restart]
+      :transient
   """
   @spec consumer_spec(redix, t, function() | handler(), keyword()) :: Supervisor.child_spec()
   def consumer_spec(redix, stream, callback, opts \\ []) do
-    Redix.Stream.Consumer.child_spec({redix, stream, callback, opts})
+    ConsumerSup.child_spec([redix, stream, callback, opts])
   end
 end

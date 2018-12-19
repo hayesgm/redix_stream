@@ -23,8 +23,12 @@ defmodule Redix.StreamTest do
       spec = Redix.Stream.consumer_spec(:redix, "topic", fn msg -> msg end)
 
       assert %{
-               id: Redix.Stream.Consumer,
-               start: {Redix.Stream.Consumer, :start_link, [:redix, "topic", _fn, []]}
+               id: Redix.Stream.ConsumerSup,
+               start:
+                 {Redix.Stream.ConsumerSup, :start_link,
+                  [:redix, "topic", _fn, [sup_name: Redix.Stream.ConsumerSup]]},
+               type: :supervisor,
+               restart: :permanent
              } = spec
     end
 
@@ -32,13 +36,20 @@ defmodule Redix.StreamTest do
       spec = Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]})
 
       assert %{
-               id: Redix.Stream.Consumer,
+               id: Redix.Stream.ConsumerSup,
                start: {
-                 Redix.Stream.Consumer,
+                 Redix.Stream.ConsumerSup,
                  :start_link,
-                 [:redix, "topic", {Module, :function, [:arg1, :arg2]}, []]
-               }
-             } = spec
+                 [
+                   :redix,
+                   "topic",
+                   {Module, :function, [:arg1, :arg2]},
+                   [sup_name: Redix.Stream.ConsumerSup]
+                 ]
+               },
+               type: :supervisor,
+               restart: :permanent
+             } == spec
     end
 
     test "it should produce a spec with given multiple streams and an MFA and opts" do
@@ -51,17 +62,22 @@ defmodule Redix.StreamTest do
         )
 
       assert %{
-               id: Redix.Stream.Consumer,
+               id: Redix.Stream.ConsumerSup,
                start: {
-                 Redix.Stream.Consumer,
+                 Redix.Stream.ConsumerSup,
                  :start_link,
                  [
                    :redix,
                    "topic",
                    {Module, :function, [:arg1, :arg2]},
-                   [group: "my_consumer_group"]
+                   [
+                     sup_name: Redix.Stream.ConsumerSup,
+                     group: "my_consumer_group"
+                   ]
                  ]
-               }
+               },
+               type: :supervisor,
+               restart: :permanent
              } = spec
     end
   end
