@@ -1,3 +1,5 @@
+# 0.2.1
+ * Use new MKSTREAM on Redis consumer group instead of wrapping failure
 # 0.2.0
  * Add a supervisor for each consumer
  * Handle shutdown of a consumer gracefully

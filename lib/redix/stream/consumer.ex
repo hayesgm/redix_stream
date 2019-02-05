@@ -320,17 +320,8 @@ defmodule Redix.Stream.Consumer do
 
   @spec ensure_stream_and_group(pid(), String.t(), String.t(), String.t(), boolean()) :: :ok
   defp ensure_stream_and_group(redix, stream, group_name, start_pos, create_not_exists) do
-    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos]) do
-      {:error, error = %Redix.Error{message: "ERR no such key"}} ->
-        if create_not_exists do
-          {:ok, _} = Redix.command(redix, ["XADD", stream, "*", "", ""])
-
-          # Recurse without create_not_exists flag set
-          ensure_stream_and_group(redix, stream, group_name, start_pos, true)
-        else
-          raise error
-        end
-
+    extra = if (create_not_exists), do: ["MKSTREAM"], else: []
+    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos|extra]) do
       {:error, %Redix.Error{message: "BUSYGROUP Consumer Group name already exists"}} ->
         # This is fine, just means the group already exists
         :ok
