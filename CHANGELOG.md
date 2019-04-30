@@ -1,3 +1,5 @@
+# 0.2.2
+ * Inspect error codes instead of assuming a string value
 # 0.2.1
  * Use `MKSTREAM` command
  * Support consumers reading from end of stream

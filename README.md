@@ -12,7 +12,7 @@ by adding `redix_stream` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:redix_stream, "~> 0.2.1"}
+    {:redix_stream, "~> 0.2.2"}
   ]
 end
 ```

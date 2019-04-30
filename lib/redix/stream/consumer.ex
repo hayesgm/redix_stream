@@ -198,7 +198,7 @@ defmodule Redix.Stream.Consumer do
 
       {:error, error} ->
         if raise_errors do
-          raise "#{__MODULE__} Error processing #{id}: #{error}\n\nvalues:\n#{inspect(values)}"
+          raise "#{__MODULE__} Error processing #{id}: #{inspect(error)}\n\nvalues:\n#{inspect(values)}"
         end
     end
 
