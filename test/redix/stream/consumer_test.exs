@@ -240,6 +240,51 @@ defmodule Redix.Stream.ConsumerTest do
   end
 
   @tag :integration
+  test "a consumer group can read starting from end of stream", %{
+    cmd_connection: cmd_connection,
+    stream_name: stream_name
+  } do
+    {:ok, redix_1} = Redix.start_link()
+    pid = self()
+
+    {:ok, _msg_id1} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_1" => "value_1"})
+    {:ok, _msg_id2} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_2" => "value_2"})
+
+    {:ok, _sup} =
+      ConsumerSup.start_link(
+        redix_1,
+        stream_name,
+        fn stream, id, values ->
+          # this runs in the consumer and blocks
+          # further processing.
+          :timer.sleep(100)
+
+          send(pid, {:streamed, stream, id, values})
+
+          :ok
+        end,
+        group_name: "test",
+        consumer_name: "consumer1",
+        consumer_group_command_connection: redix_1,
+        process_pending: true,
+        start_pos: :end_of_stream
+      )
+
+    {:ok, _msg_id3} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_3" => "value_3"})
+    {:ok, _msg_id4} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_4" => "value_4"})
+    {:ok, _msg_id5} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_5" => "value_5"})
+
+    assert_receive {:streamed, ^stream_name, _id, %{"key_3" => "value_3"}}, 500
+    assert_receive {:streamed, ^stream_name, _id, %{"key_4" => "value_4"}}, 500
+    assert_receive {:streamed, ^stream_name, _id, %{"key_5" => "value_5"}}, 500
+
+    # Make sure we didn't restream any data
+    refute_receive {:streamed, ^stream_name, _id, %{"key_3" => "value_3"}}
+    refute_receive {:streamed, ^stream_name, _id, %{"key_4" => "value_4"}}
+    refute_receive {:streamed, ^stream_name, _id, %{"key_5" => "value_5"}}
+  end
+
+  @tag :integration
   test "it allows processing to finish before shutdown", %{
     cmd_connection: cmd_connection,
     stream_name: stream_name

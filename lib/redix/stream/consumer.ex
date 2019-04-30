@@ -76,19 +76,22 @@ defmodule Redix.Stream.Consumer do
 
     start_pos_given = Keyword.get(opts, :start_pos, default_start_pos)
 
-    start_pos =
+    {create_pos, start_pos} =
       case {group_name, process_pending, start_pos_given} do
-        {nil, _, :start_of_stream} -> "0"
-        {nil, _, :end_of_stream} -> "$"
-        {_, true, _} -> "0"
-        {_, false, :start_of_stream} -> "0"
-        {_, false, :end_of_stream} -> "$"
-        {_, false, :last_known_message} -> "$"
-        {_, false, other} -> other
+        {nil, _, :start_of_stream} -> {nil, "0"}
+        {nil, _, :end_of_stream} -> {nil, "$"}
+        {_, true, :start_of_stream} -> {"0", "0"}
+        {_, true, :end_of_stream} -> {"$", "0"}
+        {_, true, :last_known_message} -> {"$", "0"}
+        {_, true, other} -> {other, "0"}
+        {_, false, :start_of_stream} -> {"0", "0"}
+        {_, false, :end_of_stream} -> {"$", ">"}
+        {_, false, :last_known_message} -> {"$", ">"}
+        {_, false, other} -> {other, other}
       end
 
     if consumer_name,
-      do: :ok = ensure_stream_and_group(redix, stream, group_name, start_pos, create_not_exists)
+      do: :ok = ensure_stream_and_group(redix, stream, group_name, create_pos, create_not_exists)
 
     stream_more_data(timeout, start_pos)
 
@@ -319,18 +322,14 @@ defmodule Redix.Stream.Consumer do
   end
 
   @spec ensure_stream_and_group(pid(), String.t(), String.t(), String.t(), boolean()) :: :ok
-  defp ensure_stream_and_group(redix, stream, group_name, start_pos, create_not_exists) do
-    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, start_pos]) do
-      {:error, error = %Redix.Error{message: "ERR no such key"}} ->
-        if create_not_exists do
-          {:ok, _} = Redix.command(redix, ["XADD", stream, "*", "", ""])
+  defp ensure_stream_and_group(redix, stream, group_name, create_pos, create_not_exists) do
+    create_not_exists_cmd = if create_not_exists do
+      ["MKSTREAM"]
+    else
+      []
+    end
 
-          # Recurse without create_not_exists flag set
-          ensure_stream_and_group(redix, stream, group_name, start_pos, true)
-        else
-          raise error
-        end
-
+    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, create_pos] ++ create_not_exists_cmd) do
       {:error, %Redix.Error{message: "BUSYGROUP Consumer Group name already exists"}} ->
         # This is fine, just means the group already exists
         :ok

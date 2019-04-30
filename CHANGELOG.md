@@ -1,3 +1,6 @@
+# 0.2.1
+ * Use `MKSTREAM` command
+ * Support consumers reading from end of stream
 # 0.2.0
  * Add a supervisor for each consumer
  * Handle shutdown of a consumer gracefully
