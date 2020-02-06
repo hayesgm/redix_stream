@@ -8,7 +8,7 @@ defmodule Redix.Stream do
 
   @type redix :: pid() | atom()
   @type t :: String.t()
-  @type handler :: {module(), atom(), list(any())}
+  @type handler :: {module(), atom(), list(any())} | function()
 
   @doc """
   Produces a new single message into a Redis stream.
@@ -52,7 +52,7 @@ defmodule Redix.Stream do
       iex> Redix.Stream.consumer_spec(:redix, "topic", {Module, :function, [:arg1, :arg2]}, sup_restart: :transient)[:restart]
       :transient
   """
-  @spec consumer_spec(redix, t, function() | handler(), keyword()) :: Supervisor.child_spec()
+  @spec consumer_spec(redix, t, handler(), keyword()) :: Supervisor.child_spec()
   def consumer_spec(redix, stream, callback, opts \\ []) do
     ConsumerSup.child_spec([redix, stream, callback, opts])
   end

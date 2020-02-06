@@ -111,6 +111,18 @@ defmodule Redix.Stream.Consumer do
     :ok
   end
 
+  def ack(consumer, id), do: GenServer.call(consumer, {:ack, id})
+
+  def handle_call({:ack, id}, _from,
+    state = %{
+      redix: redix,
+      stream: stream,
+      group_name: group_name
+    }) do
+    {:ok, num} = Redix.command(redix, ["XACK", stream, group_name, id])
+    {:reply, num, state}
+  end
+
   @doc """
   Handles a new message from a stream, dispatching it to the given handler.
   """
@@ -183,18 +195,13 @@ defmodule Redix.Stream.Consumer do
           group_name: group_name,
           raise_errors: raise_errors
         }
-      ) do
-    case call_handler(handler, stream, id, values) do
+      ) when not is_nil(group_name) do
+    case call_handler(handler, stream, group_name, id, values) do
       :ok ->
-        # TODO: Should we allow asynchronous ack?
+        {:ok, _} = Redix.command(redix, ["XACK", stream, group_name, id])
 
-        {:ok, _} =
-          Redix.command(redix, [
-            "XACK",
-            stream,
-            group_name,
-            id
-          ])
+      :defer ->
+        :ok
 
       {:error, error} ->
         if raise_errors do
@@ -276,18 +283,19 @@ defmodule Redix.Stream.Consumer do
   @spec call_handler(Redix.Stream.handler(), Redix.Stream.t(), String.t(), %{
           String.t() => String.t()
         }) :: any()
-  # Handle sentinel
   defp call_handler(_handler, _stream, _id, %{"" => ""}), do: :ok
-
+  defp call_handler(fun, stream, id, map) when is_function(fun), do: fun.(stream, id, map)
   defp call_handler({module, function, args}, stream, id, map) do
     apply(module, function, args ++ [stream, id, map])
   end
 
-  @spec call_handler(function(), Redix.Stream.t(), String.t(), %{
+  @spec call_handler(Redix.Stream.handler(), Redix.Stream.t(), String.t(), String.t(), %{
           String.t() => String.t()
         }) :: any()
-  defp call_handler(fun, stream, id, map) do
-    fun.(stream, id, map)
+  defp call_handler(_handler, _stream, _group, _id, %{"" => ""}), do: :ok
+  defp call_handler(fun, stream, group, id, map) when is_function(fun), do: fun.(stream, group, id, map)
+  defp call_handler({module, function, args}, stream, group, id, map) do
+    apply(module, function, args ++ [stream, group, id, map])
   end
 
   @spec stream_items_to_tuples(list(list(String.t() | list(String.t()))), String.t()) ::

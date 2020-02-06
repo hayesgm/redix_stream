@@ -37,7 +37,10 @@ defmodule Redix.Stream.ConsumerTest do
       Consumer.start_link(
         redix_1,
         stream_name,
-        fn stream, id, values -> send(pid, {:streamed, stream, id, values}) end
+        fn stream, id, values ->
+          send(pid, {:streamed, stream, id, values})
+          :ok
+        end
       )
 
     # allow consumer time to connect
@@ -46,6 +49,54 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, _msg_id} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_1" => "value_1"})
 
     assert_receive {:streamed, ^stream_name, _id, %{"key_1" => "value_1"}}, 5_000
+  end
+
+  @tag :integration
+  test "it should connect and stream a single message and ack async", %{
+    cmd_connection: cmd_connection,
+    stream_name: stream_name
+  } do
+    {:ok, redix_1} = Redix.start_link()
+    pid = self()
+
+    {:ok, consumer} =
+      Consumer.start_link(
+        redix_1,
+        stream_name,
+        fn stream, "test", id, values ->
+          send(pid, {:streamed, stream, id, values})
+          :defer
+        end,
+        group_name: "test",
+        consumer_name: "consumer1"
+      )
+
+    # allow consumer time to connect
+    :timer.sleep(500)
+
+    {:ok, _msg_id} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_1" => "value_1"})
+
+    assert_receive {:streamed, ^stream_name, id, %{"key_1" => "value_1"}}, 5_000
+
+    assert Consumer.ack(consumer, id) == 1
+
+    {:ok, consumer2} =
+      Consumer.start_link(
+        redix_1,
+        stream_name,
+        fn stream, "test", id, values ->
+          send(pid, {:streamed, stream, id, values})
+          :defer
+        end,
+        group_name: "test",
+        consumer_name: "consumer2"
+      )
+
+    {:ok, _msg_id} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_2" => "value_2"})
+
+    assert_receive {:streamed, ^stream_name, id2, %{"key_2" => "value_2"}}, 5_000
+
+    assert Consumer.ack(consumer2, id2) == 1
   end
 
   @tag :integration
@@ -62,7 +113,6 @@ defmodule Redix.Stream.ConsumerTest do
         stream_name,
         fn stream, id, values ->
           send(pid, {:streamed, stream, id, values})
-
           :ok
         end
       )
@@ -95,12 +145,9 @@ defmodule Redix.Stream.ConsumerTest do
         redix_1,
         stream_name,
         fn stream, id, values ->
-          # this runs in the consumer and blocks
-          # further processing.
-          :timer.sleep(100)
-
+          # this runs in the consumer and blocks further processing
+          Process.sleep(100)
           send(pid, {:streamed, stream, id, values})
-
           :ok
         end
       )
@@ -131,13 +178,10 @@ defmodule Redix.Stream.ConsumerTest do
       Consumer.start_link(
         redix_1,
         stream_name,
-        fn stream, id, values ->
-          # this runs in the consumer and blocks
-          :timer.sleep(100)
-          # further processing.
-
-          send(pid, {:streamed_consumer1, stream, id, values})
-
+        fn stream, group, id, values ->
+          # this runs in the consumer and blocks further processing
+          Process.sleep(100)
+          send(pid, {:streamed_consumer1, stream, group, id, values})
           :ok
         end,
         group_name: "test",
@@ -149,13 +193,10 @@ defmodule Redix.Stream.ConsumerTest do
       Consumer.start_link(
         redix_2,
         stream_name,
-        fn stream, id, values ->
-          # this runs in the consumer and blocks
-          :timer.sleep(100)
-          # further processing.
-
-          send(pid, {:streamed_consumer2, stream, id, values})
-
+        fn stream, group, id, values ->
+          # this runs in the consumer and blocks further processing
+          Process.sleep(100)
+          send(pid, {:streamed_consumer2, stream, group, id, values})
           :ok
         end,
         group_name: "test",
@@ -169,9 +210,9 @@ defmodule Redix.Stream.ConsumerTest do
     :timer.sleep(100)
     {:ok, msg_id3} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_3" => "value_3"})
 
-    assert_receive {consumer1, ^stream_name, ^msg_id1, %{"key_1" => "value_1"}}, 5_000
-    assert_receive {consumer2, ^stream_name, ^msg_id2, %{"key_2" => "value_2"}}, 5_000
-    assert_receive {consumer3, ^stream_name, ^msg_id3, %{"key_3" => "value_3"}}, 5_000
+    assert_receive {consumer1, ^stream_name, "test", ^msg_id1, %{"key_1" => "value_1"}}, 5_000
+    assert_receive {consumer2, ^stream_name, "test", ^msg_id2, %{"key_2" => "value_2"}}, 5_000
+    assert_receive {consumer3, ^stream_name, "test", ^msg_id3, %{"key_3" => "value_3"}}, 5_000
 
     # Make sure each consumer handles at least one message
     assert Enum.member?([consumer1, consumer2, consumer3], :streamed_consumer1)
@@ -188,7 +229,7 @@ defmodule Redix.Stream.ConsumerTest do
 
     {:ok, agent} = Agent.start_link(fn -> 1 end)
 
-    handler = fn stream, id, values ->
+    handler = fn stream, group, id, values ->
       ctr = Agent.get_and_update(agent, fn state -> {state, state + 1} end)
 
       # Fail on second and third message processing
@@ -203,8 +244,7 @@ defmodule Redix.Stream.ConsumerTest do
 
         _ ->
           # Otherwise, good
-          send(pid, {:streamed, stream, id, values})
-
+          send(pid, {:streamed, stream, group, id, values})
           :ok
       end
     end
@@ -225,18 +265,18 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, _msg_id4} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_4" => "value_4"})
     {:ok, _msg_id5} = Redix.Stream.produce(cmd_connection, stream_name, %{"key_5" => "value_5"})
 
-    assert_receive {:streamed, ^stream_name, _id, %{"key_1" => "value_1"}}, 500
-    assert_receive {:streamed, ^stream_name, _id, %{"key_2" => "value_2"}}, 500
-    assert_receive {:streamed, ^stream_name, _id, %{"key_3" => "value_3"}}
-    assert_receive {:streamed, ^stream_name, _id, %{"key_4" => "value_4"}}
-    assert_receive {:streamed, ^stream_name, _id, %{"key_5" => "value_5"}}
+    assert_receive {:streamed, ^stream_name, "test", _id, %{"key_1" => "value_1"}}, 500
+    assert_receive {:streamed, ^stream_name, "test", _id, %{"key_2" => "value_2"}}, 500
+    assert_receive {:streamed, ^stream_name, "test", _id, %{"key_3" => "value_3"}}
+    assert_receive {:streamed, ^stream_name, "test", _id, %{"key_4" => "value_4"}}
+    assert_receive {:streamed, ^stream_name, "test", _id, %{"key_5" => "value_5"}}
 
     # Make sure we didn't restream any data
-    refute_receive {:streamed, ^stream_name, _id, %{"key_1" => "value_1"}}
-    refute_receive {:streamed, ^stream_name, _id, %{"key_2" => "value_2"}}
-    refute_receive {:streamed, ^stream_name, _id, %{"key_3" => "value_3"}}
-    refute_receive {:streamed, ^stream_name, _id, %{"key_4" => "value_4"}}
-    refute_receive {:streamed, ^stream_name, _id, %{"key_5" => "value_5"}}
+    refute_receive {:streamed, ^stream_name, "test", _id, %{"key_1" => "value_1"}}
+    refute_receive {:streamed, ^stream_name, "test", _id, %{"key_2" => "value_2"}}
+    refute_receive {:streamed, ^stream_name, "test", _id, %{"key_3" => "value_3"}}
+    refute_receive {:streamed, ^stream_name, "test", _id, %{"key_4" => "value_4"}}
+    refute_receive {:streamed, ^stream_name, "test", _id, %{"key_5" => "value_5"}}
   end
 
   @tag :integration
@@ -254,13 +294,10 @@ defmodule Redix.Stream.ConsumerTest do
       ConsumerSup.start_link(
         redix_1,
         stream_name,
-        fn stream, id, values ->
-          # this runs in the consumer and blocks
-          # further processing.
+        fn stream, "test", id, values ->
+          # this runs in the consumer and blocks further processing
           :timer.sleep(100)
-
           send(pid, {:streamed, stream, id, values})
-
           :ok
         end,
         group_name: "test",
@@ -292,11 +329,9 @@ defmodule Redix.Stream.ConsumerTest do
     {:ok, redix_1} = Redix.start_link()
     pid = self()
 
-    handler = fn stream, id, values ->
+    handler = fn stream, "test", id, values ->
       Process.sleep(1000)
-
       send(pid, {:streamed, stream, id, values})
-
       :ok
     end
 
