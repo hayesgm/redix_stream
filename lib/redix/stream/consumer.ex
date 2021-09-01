@@ -113,12 +113,15 @@ defmodule Redix.Stream.Consumer do
 
   def ack(consumer, id), do: GenServer.call(consumer, {:ack, id})
 
-  def handle_call({:ack, id}, _from,
-    state = %{
-      redix: redix,
-      stream: stream,
-      group_name: group_name
-    }) do
+  def handle_call(
+        {:ack, id},
+        _from,
+        state = %{
+          redix: redix,
+          stream: stream,
+          group_name: group_name
+        }
+      ) do
     {:ok, num} = Redix.command(redix, ["XACK", stream, group_name, id])
     {:reply, num, state}
   end
@@ -195,7 +198,8 @@ defmodule Redix.Stream.Consumer do
           group_name: group_name,
           raise_errors: raise_errors
         }
-      ) when not is_nil(group_name) do
+      )
+      when not is_nil(group_name) do
     case call_handler(handler, stream, group_name, id, values) do
       :ok ->
         {:ok, _} = Redix.command(redix, ["XACK", stream, group_name, id])
@@ -285,6 +289,7 @@ defmodule Redix.Stream.Consumer do
         }) :: any()
   defp call_handler(_handler, _stream, _id, %{"" => ""}), do: :ok
   defp call_handler(fun, stream, id, map) when is_function(fun), do: fun.(stream, id, map)
+
   defp call_handler({module, function, args}, stream, id, map) do
     apply(module, function, args ++ [stream, id, map])
   end
@@ -293,7 +298,10 @@ defmodule Redix.Stream.Consumer do
           String.t() => String.t()
         }) :: any()
   defp call_handler(_handler, _stream, _group, _id, %{"" => ""}), do: :ok
-  defp call_handler(fun, stream, group, id, map) when is_function(fun), do: fun.(stream, group, id, map)
+
+  defp call_handler(fun, stream, group, id, map) when is_function(fun),
+    do: fun.(stream, group, id, map)
+
   defp call_handler({module, function, args}, stream, group, id, map) do
     apply(module, function, args ++ [stream, group, id, map])
   end
@@ -331,13 +339,17 @@ defmodule Redix.Stream.Consumer do
 
   @spec ensure_stream_and_group(pid(), String.t(), String.t(), String.t(), boolean()) :: :ok
   defp ensure_stream_and_group(redix, stream, group_name, create_pos, create_not_exists) do
-    create_not_exists_cmd = if create_not_exists do
-      ["MKSTREAM"]
-    else
-      []
-    end
+    create_not_exists_cmd =
+      if create_not_exists do
+        ["MKSTREAM"]
+      else
+        []
+      end
 
-    case Redix.command(redix, ["XGROUP", "CREATE", stream, group_name, create_pos] ++ create_not_exists_cmd) do
+    case Redix.command(
+           redix,
+           ["XGROUP", "CREATE", stream, group_name, create_pos] ++ create_not_exists_cmd
+         ) do
       {:error, %Redix.Error{message: "BUSYGROUP Consumer Group name already exists"}} ->
         # This is fine, just means the group already exists
         :ok
