@@ -87,9 +87,9 @@ def MyApp.Application do
     # List all child processes to be supervised
     children = [
       worker(Redix, [[], [name: :redix]]),
-      Redix.Stream.consumer_spec(:redix, "my_topic", {MyModule, :my_func, [group_name: "my_group", consumer_name: "consumer1"]})
+      Redix.Stream.consumer_spec(:redix, "my_topic", {MyModule, :my_func, []}, group_name: "my_group", consumer_name: "consumer1")
     ]
-
+    # start_pos: Stream starting position
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Blocks.Supervisor]
